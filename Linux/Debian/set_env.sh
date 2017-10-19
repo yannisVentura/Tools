@@ -1,0 +1,14 @@
+sudo apt-get update && sudo apt-get upgrade;
+sudo apt-get install python3;
+sudo apt-get install git;
+sudo apt-get install svn;
+sudo apt-get install openssh;
+sudo apt-get install openvpn;
+sudo apt-get install htop;
+sudo apt-get install dropbox;
+sudo add-apt-repository -y "deb https://packages.microsoft.com/repos/vscode stable main" && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys EB3E94ADBE1229CF && sudo apt-get update && sudo apt-get install code;
+sudo apt-get install geany && sudo apt-get install geany-plugin*;
+sudo apt-get install steam;
+mkdir /doc_dev_local/git/github;
+mkdir /doc_dev_local/svn;
+mkdir /master;
