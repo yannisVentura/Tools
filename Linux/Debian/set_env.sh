@@ -15,3 +15,7 @@ mkdir /home/$USER/Documents/projects/git;
 mkdir /home/$USER/Documents/projects/svn;
 mkdir /home/$USER/Documents/projects/GoogleDrive;
 mkdir /home/$USER/Documents/projects/Master;
+
+> piste pour éditer les alias :
+
+echo texte_à_ecrire >> fichier_de_sortie.txt
