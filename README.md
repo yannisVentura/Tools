@@ -38,4 +38,33 @@ Be sure to execute this script as an administrator.
 
     `./changeKey.PS1`
 
+## Linux
+
+## Set_env
+
+The set env script update the system and install some Debian Packages for developper. By executing this script the following packages will be installed : 
+
+_ Python3
+_ net-tools
+_ git
+_ svn
+_ openssh
+_ openvpn
+_ htop
+_ dropbox
+_ geany ( text editor )
+_ visual studio code
+
+It will also create some folders to manage your developement in the $USER/Documents folder : 
+
+    /home/$USER/Documents/projects
+    /home/$USER/Documents/projects/git
+    /home/$USER/Documents/projects/svn
+    /home/$USER/Documents/projects/GoogleDrive
+    /home/$USER/Documents/projects/Master
+
+Finally it create some aliases in the /bash_aliases file.
+
+
+
 
