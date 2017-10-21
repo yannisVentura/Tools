@@ -7,9 +7,9 @@ if ($response -eq "yes" -or $response -eq "y")
     $key=Read-Host "Please enter your Key"
     $shell = new-object -com wscript.shell
     $shell.popup("Your new Windows 7 Key is : $key")
+    #Commands to activate the product key
     slmgr -ipk $key
     slmgr -ato
-    
 }
 else
 {
