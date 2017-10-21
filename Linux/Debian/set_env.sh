@@ -22,9 +22,3 @@ echo "alias upgrade='sudo apt-get update && upgrade'" >> /home/$USER/.bash_alias
 echo "alias py3='python3'" >> /home/$USER/.bash_aliases;
 echo "alias ping1='ping 8.8.8.8'"
 cat /home/$USER/.bash_aliases;
-=======
-
-> piste pour éditer les alias :
-
-echo texte_à_ecrire >> fichier_de_sortie.txt
->>>>>>> 80030fd820e56f584d46b4b7884b1e97516de689
