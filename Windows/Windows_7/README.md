@@ -7,6 +7,8 @@ First of all you must verify that powershell script is activate in your operatin
 4. Executes thoses commands :
 
   `cd Tools\Windows\Windows_7`
+  
+  
   `.\changeKey.PS1`
 
 ... Then let the scrip guide you.
