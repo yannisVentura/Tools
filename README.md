@@ -65,6 +65,9 @@ It will also create some folders to manage your developement in the $USER/Docume
 
 Finally it create some aliases in the /bash_aliases file.
 
-
+    clone='git clone
+    upgrade='sudo apt-get update && upgrade'
+    py3='python3
+    ping1='ping 8.8.8.8'
 
 
