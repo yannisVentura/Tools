@@ -15,3 +15,9 @@ mkdir /home/$USER/Documents/projects/git;
 mkdir /home/$USER/Documents/projects/svn;
 mkdir /home/$USER/Documents/projects/GoogleDrive;
 mkdir /home/$USER/Documents/projects/Master;
+echo "Create some aliases..."
+echo "alias clone='git clone'" >> /home/$USER/.bash_aliases;
+echo "alias upgrade='sudo apt-get update && upgrade'" >> /home/$USER/.bash_aliases;
+echo "alias py3='python3'" >> /home/$USER/.bash_aliases;
+echo "alias ping1='ping 8.8.8.8'"
+cat /home/$USER/.bash_aliases;
