@@ -2,7 +2,7 @@
 echo "You are about to change your windows 7 activation key, please be sure you are running this script as an Administrator ..."
 $response=Read-Host "Would you like to change your windows 7  key ?"
 
-if ($response -eq "yes") || ($response -eq "y")
+if ($response -eq "yes" -or $response -eq "y")
 {
     $key=Read-Host "Please enter your Key"
     $shell = new-object -com wscript.shell
