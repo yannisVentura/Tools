@@ -36,6 +36,6 @@ For a given file and a destination it will extract the archive to it.
 This PowerShell script allow users to change easly their Microsoft Windows activation key.
 Be sure to execute this script as an administrator.
 
-    `changeKey.PS1`
+    `./changeKey.PS1`
 
 
