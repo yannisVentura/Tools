@@ -11,4 +11,6 @@ if ($response -eq "yes" -or $response -eq "y")
     slmgr -acto
 }
 else
+{
     echo "Take a time to think about it little padawan."
+}
