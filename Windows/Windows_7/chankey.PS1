@@ -8,7 +8,8 @@ if ($response -eq "yes" -or $response -eq "y")
     $shell = new-object -com wscript.shell
     $shell.popup("Your new Windows 7 Key is : $key")
     slmgr -ipk $key
-    slmgr -acto
+    slmgr -ato
+    
 }
 else
 {
