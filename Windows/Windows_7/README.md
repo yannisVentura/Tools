@@ -1,4 +1,4 @@
-This script allow users to change easly there product key to another.
+This script allow Windows 7 users to change easly there product key to another one.
 First of all you must verify that powershell script is activate in your operating system.
 
 1. Launch powerhsell Demarer > Powershell
