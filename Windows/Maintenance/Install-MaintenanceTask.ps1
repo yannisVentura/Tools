@@ -112,7 +112,55 @@ if ($PSCmdlet.ShouldProcess('winget', 'Installer ou mettre à jour winget pour t
 }
 
 # --- Tâche planifiée ----------------------------------------------------------------------------
-$powershellExe = Join-Path -Path $env:SystemRoot -ChildPath 'System32\WindowsPowerShell\v1.0\powershell.exe'
+function Get-TaskCompatibility {
+    <#
+        Choisit le niveau de compatibilité de la tâche ("Configurer pour") d'après le système d'exploitation.
+        Valeurs TASK_COMPATIBILITY de l'API Planificateur de tâches : 6 = Windows 10 (aussi utilisé par Windows 11
+        et Windows Server 2016+), 4 = Windows 8, 3 = Windows 7, 2 = Windows Vista.
+        https://learn.microsoft.com/windows/win32/api/taskschd/ne-taskschd-task_compatibility
+    #>
+    $os = Get-CimInstance -ClassName Win32_OperatingSystem
+    $version = [version]$os.Version
+
+    $compatibility = switch ($true) {
+        { $version -ge [version]'10.0' } { @{ Value = 6; Name = 'Windows 10' }; break }
+        { $version -ge [version]'6.2' }  { @{ Value = 4; Name = 'Windows 8' }; break }
+        { $version -ge [version]'6.1' }  { @{ Value = 3; Name = 'Windows 7' }; break }
+        default                          { @{ Value = 2; Name = 'Windows Vista' } }
+    }
+
+    [pscustomobject]@{
+        Value = $compatibility.Value
+        Name  = $compatibility.Name
+        OS    = '{0} (build {1})' -f $os.Caption, $os.BuildNumber
+    }
+}
+
+function Set-TaskCompatibility {
+    <#
+        Applique le niveau de compatibilité via l'API COM du Planificateur : le cmdlet New-ScheduledTaskSettingsSet
+        de Windows PowerShell 5.1 ne propose pas de valeur au-delà de Windows 8.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$TaskName,
+
+        [Parameter(Mandatory)]
+        [int]$Compatibility
+    )
+
+    $service = New-Object -ComObject 'Schedule.Service'
+    $service.Connect()
+    $folder = $service.GetFolder('\')
+    $definition = $folder.GetTask($TaskName).Definition
+    $definition.Settings.Compatibility = $Compatibility
+    # 6 = TASK_CREATE_OR_UPDATE ; 5 = TASK_LOGON_SERVICE_ACCOUNT (compte SYSTEM, S-1-5-18).
+    [void]$folder.RegisterTaskDefinition($TaskName, $definition, 6, 'S-1-5-18', $null, 5)
+}
+
+$compatibility = Get-TaskCompatibility
+
+$powershellExe =Join-Path -Path $env:SystemRoot -ChildPath 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -f $targetScript
 if ($WithDism) {
     $arguments += ' -WithDism'
@@ -133,12 +181,13 @@ $settings  = New-ScheduledTaskSettingsSet `
     -RestartInterval (New-TimeSpan -Minutes 30)
 
 $task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings `
-    -Description "Exécute sfc /scannow puis winget upgrade --all en arrière-plan. Journal : $logPath"
+    -Description "Exécute sfc /scannow puis met à jour les applications avec winget, une par une, en arrière-plan. Journal : $logPath"
 
 if ($PSCmdlet.ShouldProcess($TaskName, 'Enregistrer la tâche planifiée')) {
     try {
         Register-ScheduledTask -TaskName $TaskName -TaskPath '\' -InputObject $task -Force | Out-Null
-        $result = 'OK'
+        Set-TaskCompatibility -TaskName $TaskName -Compatibility $compatibility.Value
+        $result = 'OK compatibilité {0} - {1}' -f $compatibility.Name, $compatibility.OS
     }
     catch {
         $result = 'ERREUR {0}' -f $_.Exception.Message
@@ -149,7 +198,7 @@ if ($PSCmdlet.ShouldProcess($TaskName, 'Enregistrer la tâche planifiée')) {
         Add-Content -LiteralPath $logPath -Encoding UTF8 -Value ('{0:dd\/MM\/yyyy HH\:mm\:ss} | {1,-20} | {2}' -f (Get-Date), 'Installation tâche', $result)
     }
 
-    Write-Output ("Tâche '{0}' enregistrée : chaque {1} à {2:HH\:mm}, sous SYSTEM." -f $TaskName, $DayOfWeek, $At)
+    Write-Output ("Tâche '{0}' enregistrée : chaque {1} à {2:HH\:mm}, sous SYSTEM, configurée pour {3} ({4})." -f $TaskName, $DayOfWeek, $At, $compatibility.Name, $compatibility.OS)
     Write-Output ("Journal : {0}" -f $logPath)
 
     if ($RunNow) {

@@ -7,14 +7,14 @@
     Conçu pour être exécuté par une tâche planifiée sous le compte SYSTEM :
     aucune fenêtre, aucune pop-up, aucune validation demandée à l'utilisateur.
 
-    Journal volontairement minimal : une ligne par commande, OK ou ERREUR avec le code retour.
+    Journal volontairement minimal : une ligne par commande, et pour winget une ligne par application mise à jour,
+    OK ou ERREUR avec le code retour. Un échec sur une application n'empêche pas la mise à jour des autres.
     Un seul fichier, plafonné à MaxLogLines lignes (les plus anciennes sont supprimées).
 
     Exemple de journal :
-        04/11/2026 11:58:10 | Installation winget  | OK
-        04/11/2026 11:58:40 | Installation VC++    | OK
         04/11/2026 12:00:02 | sfc /scannow         | OK
-        04/11/2026 12:38:47 | winget upgrade --all | ERREUR code -1978335226 (0x8A150006)
+        04/11/2026 12:01:15 | winget upgrade       | OK Audacity.Audacity 3.7.9 -> 4.0.1
+        04/11/2026 12:01:40 | winget upgrade       | ERREUR EPSON.EpsonNetPrint 3.1.4.0 -> 3.3.1 : code -2145844844 (0x80190194)
 
 .PARAMETER WithDism
     Exécute DISM /Online /Cleanup-Image /RestoreHealth avant SFC (recommandation Microsoft).
@@ -36,7 +36,12 @@
     Test manuel depuis une console PowerShell lancée en administrateur.
 
 .NOTES
-    Codes de sortie du script : 0 = toutes les commandes OK, 1 = au moins une erreur.
+    Codes de sortie du script (résultat de la tâche planifiée) :
+      0 = maintenance exécutée. Des applications peuvent être en ERREUR dans le journal : elles sont à mettre à jour
+          manuellement, mais ne font pas échouer la tâche tant qu'au moins une autre a réussi (objectif : un poste
+          globalement maintenu).
+      1 = échec de SFC ou DISM, winget introuvable ou non exécutable (liste des mises à jour impossible à obtenir),
+          ou échec de toutes les applications à mettre à jour.
     Détails en cas d'erreur : SFC -> %WINDIR%\Logs\CBS\CBS.log, DISM -> %WINDIR%\Logs\DISM\dism.log,
     winget -> code à rechercher sur https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md
 #>
@@ -113,13 +118,23 @@ function Get-NativeSystemDirectory {
 }
 
 function Get-WingetPath {
-    # Contexte utilisateur : l'alias d'exécution winget.exe est dans le PATH.
-    $command = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($command) {
-        return $command.Source
+    # On cible en priorité le winget.exe réel du paquet App Installer le plus récent, et non l'alias d'exécution du PATH :
+    # cet alias (%LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe) est un point d'analyse propre à un utilisateur.
+    # Si le PATH de SYSTEM contient le dossier WindowsApps d'un utilisateur, SYSTEM trouve cet alias mais ne peut pas l'exécuter
+    # ("Le système ne peut pas accéder au fichier").
+    $packagePath = Get-WingetPackagePath
+    if ($packagePath) {
+        return $packagePath
     }
 
-    # Contexte SYSTEM : pas d'alias, on cible directement le paquet App Installer le plus récent contenant winget.exe.
+    # Dernier recours, hors SYSTEM uniquement : l'alias d'exécution de l'utilisateur courant.
+    if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne 'S-1-5-18') {
+        Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty Source
+    }
+}
+
+function Get-WingetPackagePath {
     # Dossier WindowsApps (listable par SYSTEM) + Get-AppxPackage (utile en administrateur, qui ne peut pas toujours lister ce dossier).
     $appsRoot = Join-Path -Path $env:ProgramFiles -ChildPath 'WindowsApps'
     $folders = @(Get-ChildItem -LiteralPath $appsRoot -Directory -Filter 'Microsoft.DesktopAppInstaller_*__8wekyb3d8bbwe' -ErrorAction SilentlyContinue |
@@ -267,7 +282,10 @@ function Invoke-Step {
 
         [int[]]$SuccessCodes = @(0),
 
-        [string]$WorkingDirectory = $env:SystemRoot
+        [string]$WorkingDirectory = $env:SystemRoot,
+
+        # Précision ajoutée au résultat (ex. "Audacity.Audacity 3.7.9 -> 4.0.1").
+        [string]$Detail
     )
 
     try {
@@ -276,17 +294,169 @@ function Invoke-Step {
         $code = $process.ExitCode
 
         if ($SuccessCodes -contains $code) {
-            Write-Log -Command $Label -Result 'OK'
+            Write-Log -Command $Label -Result ('OK {0}' -f $Detail)
             return $true
         }
 
-        Write-Log -Command $Label -Result (Format-Error $code)
+        if ($Detail) {
+            Write-Log -Command $Label -Result ('ERREUR {0} : code {1} (0x{2:X8})' -f $Detail, $code, $code)
+        }
+        else {
+            Write-Log -Command $Label -Result (Format-Error $code)
+        }
         return $false
     }
     catch {
-        Write-Log -Command $Label -Result ('ERREUR lancement impossible : {0}' -f $_.Exception.Message)
+        Write-Log -Command $Label -Result (('ERREUR {0} lancement impossible : {1}' -f $Detail, $_.Exception.Message) -replace '\s+', ' ')
         return $false
     }
+}
+
+function Invoke-WingetCapture {
+    <#
+        Exécute winget sans fenêtre et retourne son code de sortie et sa sortie texte (une entrée par ligne).
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$WingetPath,
+
+        [Parameter(Mandatory)]
+        [string[]]$ArgumentList
+    )
+
+    # En PowerShell 5.1, '2>&1' + ErrorActionPreference 'Stop' transforme la moindre ligne stderr en erreur bloquante.
+    $ErrorActionPreference = 'Continue'
+
+    $previousEncoding = $null
+    try {
+        $previousEncoding = [Console]::OutputEncoding
+        [Console]::OutputEncoding = [Text.Encoding]::UTF8   # winget écrit en UTF-8
+    }
+    catch { }
+
+    Push-Location -LiteralPath (Split-Path -Path $WingetPath -Parent)
+    try {
+        # Les indicateurs de progression réécrivent la ligne via '\r' : on ne garde que le dernier état.
+        $lines = @(& $WingetPath @ArgumentList 2>&1 | ForEach-Object { ($_.ToString() -split "`r")[-1] })
+        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Lines = $lines }
+    }
+    finally {
+        Pop-Location
+        if ($previousEncoding) {
+            try { [Console]::OutputEncoding = $previousEncoding } catch { }
+        }
+    }
+}
+
+function ConvertFrom-WingetTable {
+    <#
+        Extrait le premier tableau de "winget upgrade" : une entrée par application (Id, Version, Available).
+        Les colonnes sont repérées par la position des titres de l'en-tête (Nom/Name, ID, Version, Disponible/Available, Source),
+        ce qui fonctionne quelle que soit la langue. Les tableaux suivants (applications épinglées ou nécessitant un ciblage
+        explicite) sont ignorés. Retourne un tableau vide s'il n'y a aucun tableau (aucune mise à jour).
+    #>
+    param(
+        [AllowEmptyCollection()]
+        [string[]]$Lines = @()
+    )
+
+    $separator = -1
+    for ($i = 1; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match '^-{10,}\s*$') {
+            $separator = $i
+            break
+        }
+    }
+    if ($separator -lt 0) {
+        return @()
+    }
+
+    $columns = [regex]::Matches($Lines[$separator - 1], '\S+')
+    if ($columns.Count -lt 4) {
+        throw "en-tête du tableau winget non reconnu : '$($Lines[$separator - 1].Trim())'"
+    }
+    $idStart = $columns[1].Index
+    $versionStart = $columns[2].Index
+    $availableStart = $columns[3].Index
+    $availableEnd = if ($columns.Count -ge 5) { $columns[4].Index } else { [int]::MaxValue }
+
+    $cell = {
+        param([string]$Line, [int]$Start, [int]$End)
+        if ($Line.Length -le $Start) { return '' }
+        $Line.Substring($Start, [Math]::Min($End, $Line.Length) - $Start).Trim()
+    }
+
+    for ($i = $separator + 1; $i -lt $Lines.Count; $i++) {
+        $line = $Lines[$i]
+        if ($line.Trim().Length -eq 0 -or $line.Length -le $availableStart) {
+            break   # fin du tableau (ligne vide ou ligne de synthèse "N mises à niveau disponibles")
+        }
+
+        $id = & $cell $line $idStart $versionStart
+        $available = & $cell $line $availableStart $availableEnd
+        if ($id -notmatch '^\S+$' -or -not $available) {
+            break
+        }
+
+        [pscustomobject]@{
+            Id        = $id
+            Version   = & $cell $line $versionStart $availableStart
+            Available = $available
+        }
+    }
+}
+
+function Invoke-WingetUpgrade {
+    <#
+        Met à jour les applications une par une et écrit une ligne de journal par application :
+        un échec isolé n'empêche pas les autres mises à jour et reste identifiable dans le journal.
+        Retourne $true s'il n'y a aucune mise à jour ou si au moins une application a été mise à jour, même si d'autres
+        échouent ; $false si la liste n'a pas pu être obtenue (winget non exécutable) ou si toutes les applications ont échoué.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$WingetPath
+    )
+
+    $label = 'winget upgrade'
+
+    try {
+        $list = Invoke-WingetCapture -WingetPath $WingetPath -ArgumentList 'upgrade', '--accept-source-agreements', '--disable-interactivity'
+        if ($WingetSuccessCodes -notcontains $list.ExitCode) {
+            Write-Log -Command $label -Result ('ERREUR liste des mises à jour : code {0} (0x{0:X8})' -f $list.ExitCode)
+            return $false
+        }
+        $packages = @(ConvertFrom-WingetTable -Lines $list.Lines)
+    }
+    catch {
+        # Première ligne seulement : PowerShell ajoute la position dans le script ("Au caractère ...").
+        Write-Log -Command $label -Result ('ERREUR liste des mises à jour : {0}' -f ($_.Exception.Message -split '[\r\n]')[0])
+        return $false
+    }
+
+    if ($packages.Count -eq 0) {
+        Write-Log -Command $label -Result 'OK aucune mise à jour disponible'
+        return $true
+    }
+
+    $succeeded = 0
+    foreach ($package in $packages) {
+        if ($package.Id -match '(…|\.\.\.)$') {
+            Write-Log -Command $label -Result ('ERREUR {0} : identifiant tronqué' -f $package.Id)
+            continue
+        }
+
+        $detail = '{0} {1} -> {2}' -f $package.Id, $package.Version, $package.Available
+        if (Invoke-Step -Label $label -Detail $detail -FilePath $WingetPath -WorkingDirectory (Split-Path -Path $WingetPath -Parent) `
+                -ArgumentList 'upgrade', '--id', $package.Id, '--exact', '--silent', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity' `
+                -SuccessCodes $WingetSuccessCodes) {
+            $succeeded++
+        }
+    }
+
+    # Objectif : maintenir le poste "globalement" à jour. Des échecs isolés restent visibles dans le journal sans faire
+    # échouer la tâche ; en revanche, si aucune application n'a pu être mise à jour, l'exécution est un échec.
+    return ($succeeded -gt 0)
 }
 
 #endregion
@@ -322,12 +492,10 @@ if ($wingetPath -and -not (Test-VCRedist)) {
 }
 
 if ($wingetPath) {
-    $allOk = (Invoke-Step -Label 'winget upgrade --all' -FilePath $wingetPath -WorkingDirectory (Split-Path -Path $wingetPath -Parent) `
-        -ArgumentList 'upgrade', '--all', '--silent', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity' `
-        -SuccessCodes $WingetSuccessCodes) -and $allOk
+    $allOk = (Invoke-WingetUpgrade -WingetPath $wingetPath) -and $allOk
 }
 else {
-    Write-Log -Command 'winget upgrade --all' -Result 'ERREUR winget introuvable'
+    Write-Log -Command 'winget upgrade' -Result 'ERREUR winget introuvable'
     $allOk = $false
 }
 
