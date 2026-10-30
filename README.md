@@ -12,6 +12,11 @@ To activate Powershell Script on you computer open Powershell as an administrato
     `Set-ExecutionPolicy RemoteSigned`
 /!\ 
 
+### Maintenance
+
+Silent weekly maintenance for Windows 10/11: `sfc /scannow` then `winget upgrade --all`, run by a scheduled task under SYSTEM, with a capped one-line-per-command log.
+See [Windows/Maintenance/README.md](Windows/Maintenance/README.md).
+
 ## Linux
 
 ### Debian scripts
