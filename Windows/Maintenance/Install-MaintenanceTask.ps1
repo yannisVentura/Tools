@@ -7,6 +7,8 @@
 .DESCRIPTION
     - Copie Invoke-SystemMaintenance.ps1 dans un dossier protégé (écriture réservée à SYSTEM et aux administrateurs,
       afin qu'un utilisateur standard ne puisse pas modifier un script exécuté avec les privilèges SYSTEM).
+    - Installe ou met à jour winget pour tous les utilisateurs (module Microsoft.WinGet.Client, accès Internet requis) :
+      absent d'un Windows 10 fraîchement installé tant que le Microsoft Store n'a pas mis à jour App Installer.
     - Crée (ou remplace) une tâche planifiée hebdomadaire :
         * compte SYSTEM, privilèges les plus élevés : aucune fenêtre ni invite UAC, que l'utilisateur soit connecté ou non ;
         * rattrapage si le poste était éteint à l'heure prévue ;
@@ -60,6 +62,7 @@ $ErrorActionPreference = 'Stop'
 $scriptName = 'Invoke-SystemMaintenance.ps1'
 $sourceScript = Join-Path -Path $PSScriptRoot -ChildPath $scriptName
 $targetScript = Join-Path -Path $InstallPath -ChildPath $scriptName
+$logPath = Join-Path -Path $InstallPath -ChildPath 'Maintenance.log'
 
 if (-not (Test-Path -LiteralPath $sourceScript)) {
     throw "Script source introuvable : $sourceScript"
@@ -94,6 +97,20 @@ if ($PSCmdlet.ShouldProcess($targetScript, 'Copier le script de maintenance')) {
     Unblock-File -LiteralPath $targetScript   # retire la marque "téléchargé depuis Internet"
 }
 
+# --- winget ---------------------------------------------------------------------------------------
+# Sur un Windows 10 fraîchement installé, winget est absent tant que le Store n'a pas mis à jour App Installer.
+# Microsoft recommande de le provisionner via Repair-WinGetPackageManager -AllUsers, fiable en session administrateur
+# (sous SYSTEM, le comportement n'est pas garanti : winget-cli #4271). La maintenance retentera si cette étape échoue.
+if ($PSCmdlet.ShouldProcess('winget', 'Installer ou mettre à jour winget pour tous les utilisateurs')) {
+    & $targetScript -InstallWingetOnly -LogPath $logPath
+    if ($LASTEXITCODE -eq 0) {
+        Write-Output 'winget installé et à jour.'
+    }
+    else {
+        Write-Warning "winget ou le runtime Visual C++ n'a pas pu être installé (voir $logPath). La maintenance retentera à chaque exécution."
+    }
+}
+
 # --- Tâche planifiée ----------------------------------------------------------------------------
 $powershellExe = Join-Path -Path $env:SystemRoot -ChildPath 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -f $targetScript
@@ -115,8 +132,6 @@ $settings  = New-ScheduledTaskSettingsSet `
     -RestartCount 2 `
     -RestartInterval (New-TimeSpan -Minutes 30)
 
-$logPath = Join-Path -Path $InstallPath -ChildPath 'Maintenance.log'
-
 $task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings `
     -Description "Exécute sfc /scannow puis winget upgrade --all en arrière-plan. Journal : $logPath"
 
@@ -131,7 +146,7 @@ if ($PSCmdlet.ShouldProcess($TaskName, 'Enregistrer la tâche planifiée')) {
     }
     finally {
         # Même format que le script de maintenance : une ligne, OK ou ERREUR.
-        Add-Content -LiteralPath $logPath -Encoding UTF8 -Value ('{0:yyyy-MM-dd HH:mm:ss} | {1,-20} | {2}' -f (Get-Date), 'Installation tâche', $result)
+        Add-Content -LiteralPath $logPath -Encoding UTF8 -Value ('{0:dd\/MM\/yyyy HH\:mm\:ss} | {1,-20} | {2}' -f (Get-Date), 'Installation tâche', $result)
     }
 
     Write-Output ("Tâche '{0}' enregistrée : chaque {1} à {2:HH\:mm}, sous SYSTEM." -f $TaskName, $DayOfWeek, $At)

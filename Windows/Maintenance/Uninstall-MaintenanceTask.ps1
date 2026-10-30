@@ -4,6 +4,10 @@
 .SYNOPSIS
     Supprime la tâche planifiée de maintenance et, en option, le dossier d'installation (script + journaux).
 
+.DESCRIPTION
+    winget et le module PowerShell Microsoft.WinGet.Client installés par Install-MaintenanceTask.ps1 sont conservés :
+    ce sont des composants Windows utiles en dehors de cet outil.
+
 .PARAMETER TaskName
     Nom de la tâche planifiée à supprimer.
 
@@ -39,7 +43,7 @@ if ($task) {
         # Trace dans le journal, sauf si celui-ci va être supprimé avec le dossier.
         $logPath = Join-Path -Path $InstallPath -ChildPath 'Maintenance.log'
         if (-not $RemoveFiles -and (Test-Path -LiteralPath $InstallPath)) {
-            Add-Content -LiteralPath $logPath -Encoding UTF8 -Value ('{0:yyyy-MM-dd HH:mm:ss} | {1,-20} | {2}' -f (Get-Date), 'Suppression tâche', 'OK')
+            Add-Content -LiteralPath $logPath -Encoding UTF8 -Value ('{0:dd\/MM\/yyyy HH\:mm\:ss} | {1,-20} | {2}' -f (Get-Date), 'Suppression tâche', 'OK')
         }
     }
 }
