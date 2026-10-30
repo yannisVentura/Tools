@@ -4,7 +4,7 @@ Maintenance hebdomadaire silencieuse d'un poste Windows 10/11 :
 
 1. `DISM /Online /Cleanup-Image /RestoreHealth` (optionnel) ;
 2. `sfc /scannow` ;
-3. `winget upgrade --all`.
+3. mise à jour des applications par winget, une application à la fois (`winget upgrade --id <Id> --exact`) : un échec isolé n'empêche pas les autres mises à jour et apparaît sur sa propre ligne de journal.
 
 Le tout s'exécute via une tâche planifiée sous le compte `SYSTEM` : aucune fenêtre, aucune pop-up, aucune validation demandée à l'utilisateur du poste. Le résultat tient en une ligne de journal par commande.
 
@@ -37,6 +37,7 @@ Le script :
 - y copie `Invoke-SystemMaintenance.ps1` et retire la marque « téléchargé depuis Internet » ;
 - installe ou met à jour winget pour tous les utilisateurs en lançant `Invoke-SystemMaintenance.ps1 -InstallWingetOnly` dans la session administrateur (méthode recommandée par Microsoft) : ligne `Installation winget` dans le journal. Installe aussi le runtime Visual C++ s'il est absent (ligne `Installation VC++`). En cas d'échec, un simple avertissement s'affiche et l'installation continue ; la maintenance retentera ;
 - crée ou remplace la tâche `\Maintenance hebdomadaire (SFC + winget)` : hebdomadaire, compte `SYSTEM`, privilèges les plus élevés, rattrapage si le poste était éteint, uniquement si le réseau est disponible, une seule instance, durée maximale 4 h, 2 relances espacées de 30 min en cas d'échec ;
+- règle la compatibilité de la tâche (« Configurer pour ») d'après le système détecté : `Windows 10` sur Windows 10 et 11, `Windows 8`, `Windows 7` ou `Windows Vista` sur les systèmes plus anciens. La ligne `Installation tâche` du journal indique le choix, par exemple `OK compatibilité Windows 10 - Microsoft Windows 11 Professionnel (build 26300)` ;
 - écrit la ligne `Installation tâche` dans le journal.
 
 Exemple avec options :
@@ -69,13 +70,13 @@ Accepte aussi `-WhatIf` et `-Confirm`.
 | `-MaxLogLines` | `500` | Lignes conservées (10 à 100 000), les plus anciennes sont supprimées. |
 | `-InstallWingetOnly` | absent | Installe ou répare uniquement winget et le runtime Visual C++, sans lancer la maintenance. |
 
-Code de sortie : `0` si toutes les commandes sont OK, `1` si au moins une est en erreur. Avec `-InstallWingetOnly` : `0` si winget est localisé et le runtime Visual C++ présent, sinon `1`.
+Code de sortie (résultat de la tâche) : `0` si la maintenance a pu s'exécuter, même si certaines applications ont échoué à se mettre à jour, tant qu'au moins une a réussi (les échecs apparaissent en `ERREUR` dans le journal et sont à mettre à jour manuellement) ; `1` si SFC ou DISM est en erreur, si winget est introuvable ou non exécutable, ou si toutes les applications à mettre à jour ont échoué. Avec `-InstallWingetOnly` : `0` si winget est localisé et le runtime Visual C++ présent, sinon `1`.
 
 `-InstallWingetOnly` effectue, sans invite : activation de TLS 1.2, installation du fournisseur NuGet (2.8.5.201 minimum) si absent, installation du module `Microsoft.WinGet.Client` (portée `AllUsers`, depuis `PSGallery`), puis `Repair-WinGetPackageManager -AllUsers -Latest -Force`. Hors compte `SYSTEM`, si winget n'est pas encore dans le `PATH`, la version la plus récente d'App Installer installée sur la machine est enregistrée pour l'utilisateur courant (`Add-AppxPackage -Register <InstallLocation>\AppxManifest.xml -DisableDevelopmentMode`, erreurs ignorées). Sans cela, l'utilisateur garde l'App Installer d'origine (sans winget) jusqu'à sa prochaine connexion.
 
 Il installe ensuite, si absent, le Visual C++ Redistributable 2015-2022 dont winget a besoin sous `SYSTEM` : téléchargement de `https://aka.ms/vs/17/release/vc_redist.<x64|x86>.exe` dans le dossier du journal, installation `/install /quiet /norestart`, suppression de l'installeur.
 
-Pendant la maintenance, si winget est introuvable, son installation est tentée une fois avant `winget upgrade --all` ; si le runtime Visual C++ est absent, son installation l'est aussi.
+Pendant la maintenance, si winget est introuvable, son installation est tentée une fois avant les mises à jour winget ; si le runtime Visual C++ est absent, son installation l'est aussi.
 
 ### `Uninstall-MaintenanceTask.ps1`
 
@@ -98,7 +99,8 @@ Format : `date heure | commande | résultat`, une ligne par commande. Le résult
 04/11/2026 11:59:12 | Installation VC++    | OK
 04/11/2026 12:00:01 | Installation tâche   | OK
 04/11/2026 12:00:02 | sfc /scannow         | OK
-04/11/2026 12:38:47 | winget upgrade --all | ERREUR code -1978335226 (0x8A150006)
+04/11/2026 12:39:15 | winget upgrade       | OK Audacity.Audacity 3.7.9 -> 4.0.1
+04/11/2026 12:39:40 | winget upgrade       | ERREUR EPSON.EpsonNetPrint 3.1.4.0 -> 3.3.1 : code -2145844844 (0x80190194)
 ```
 
 Le fichier est réduit aux `500` dernières lignes à la fin de chaque exécution : pas d'accumulation. Lecture des erreurs : [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).

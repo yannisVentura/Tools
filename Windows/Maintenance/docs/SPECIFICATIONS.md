@@ -28,26 +28,76 @@ Quand l'exécution se termine
 Alors la ligne "DISM /RestoreHealth" précède la ligne "sfc /scannow" dans le journal
 ```
 
-### REQ-MAINT-003 – Mise à jour des applications
-Le script de maintenance doit exécuter `winget upgrade --all` avec `--silent`, `--accept-source-agreements`, `--accept-package-agreements` et `--disable-interactivity`.
-- Vérification : inspection.
+### REQ-MAINT-003 – Liste des mises à jour disponibles
+Le script de maintenance doit obtenir la liste des applications ayant une mise à jour disponible en exécutant `winget upgrade` avec `--accept-source-agreements` et `--disable-interactivity`, et n'en retenir que le premier tableau (identifiant, version installée, version disponible). Les applications épinglées ou nécessitant un ciblage explicite, présentées dans un tableau séparé, sont exclues.
+- Vérification : test.
 ```gherkin
-Étant donné le code de ISM
-Quand on inspecte l'appel à winget
-Alors les quatre options sont présentes
+Étant donné un poste où 3 applications ont une mise à jour disponible et 1 application est épinglée
+Quand ISM liste les mises à jour
+Alors il retient exactement les 3 applications non épinglées, avec leur identifiant et leurs versions
 ```
 
 ### REQ-MAINT-004 – Aucune mise à jour disponible
-Si winget retourne `0x8A15002B` (aucune mise à jour applicable), alors le script de maintenance doit journaliser `OK`.
+Si la liste des mises à jour est vide, alors le script de maintenance doit journaliser une seule ligne `winget upgrade | OK aucune mise à jour disponible`.
 - Vérification : test.
 ```gherkin
 Étant donné un poste dont toutes les applications sont à jour
 Quand ISM est exécuté
-Alors la ligne "winget upgrade --all" se termine par "OK"
+Alors le journal contient une seule ligne "winget upgrade", qui se termine par "OK aucune mise à jour disponible"
+```
+
+### REQ-MAINT-033 – Mise à jour application par application
+Pour chaque application de la liste, le script de maintenance doit exécuter `winget upgrade --id <Id> --exact` avec `--silent`, `--accept-source-agreements`, `--accept-package-agreements` et `--disable-interactivity`.
+- Vérification : inspection et test.
+```gherkin
+Étant donné une liste de 4 applications à mettre à jour
+Quand ISM est exécuté
+Alors winget est appelé 4 fois, une fois par identifiant, avec --exact et les quatre options
+```
+
+### REQ-MAINT-034 – Journal par application
+Le script de maintenance doit écrire une ligne par application traitée :
+- succès (code `0` ou `0x8A15002B`) : `winget upgrade | OK <Id> <version installée> -> <version disponible>` ;
+- échec : `winget upgrade | ERREUR <Id> <version installée> -> <version disponible> : code <décimal> (0x<hexadécimal>)`.
+- Vérification : test.
+```gherkin
+Étant donné EPSON.EpsonNetPrint 3.1.4.0 dont le téléchargement de la version 3.3.1 échoue avec 0x80190194
+Et Audacity.Audacity 3.7.9 dont la mise à jour vers 4.0.1 réussit
+Quand ISM est exécuté
+Alors le journal contient "winget upgrade       | OK Audacity.Audacity 3.7.9 -> 4.0.1"
+Et le journal contient "winget upgrade       | ERREUR EPSON.EpsonNetPrint 3.1.4.0 -> 3.3.1 : code -2145844844 (0x80190194)"
+```
+
+### REQ-MAINT-035 – Échec isolé
+Si la mise à jour d'une application échoue, alors le script de maintenance doit poursuivre avec les applications suivantes.
+- Vérification : test.
+```gherkin
+Étant donné 3 applications dont la première échoue
+Quand ISM est exécuté
+Alors les 3 applications ont chacune leur ligne dans le journal
+```
+
+### REQ-MAINT-036 – Échec de la liste
+Si `winget upgrade` (liste) retourne un code autre que `0` ou `0x8A15002B`, ou si son tableau ne peut pas être analysé, alors le script de maintenance doit journaliser `winget upgrade | ERREUR liste des mises à jour : <code ou motif>` et ne lancer aucune mise à jour.
+- Vérification : test.
+```gherkin
+Étant donné winget qui échoue à interroger sa source
+Quand ISM est exécuté
+Alors la ligne "winget upgrade" contient "ERREUR liste des mises à jour"
+```
+
+### REQ-MAINT-037 – Identifiant tronqué
+Si l'identifiant d'une application apparaît tronqué dans le tableau de winget (terminé par `…`), alors le script de maintenance doit journaliser `winget upgrade | ERREUR <Id> : identifiant tronqué` sans tenter sa mise à jour.
+- Vérification : test.
+```gherkin
+Étant donné un tableau winget contenant l'identifiant "Microsoft.VisualStudioCode.Insi…"
+Quand ISM est exécuté
+Alors la ligne correspondante contient "identifiant tronqué"
+Et aucune mise à jour n'est lancée pour cette application
 ```
 
 ### REQ-MAINT-005 – Localisation de winget sous SYSTEM
-Quand `winget.exe` est absent du `PATH`, le script de maintenance doit utiliser le `winget.exe` du dossier `Microsoft.DesktopAppInstaller_*__8wekyb3d8bbwe` de version la plus élevée sous `%ProgramFiles%\WindowsApps`, en ne retenant que les dossiers dont la version est analysable et qui contiennent `winget.exe`.
+Le script de maintenance doit utiliser en priorité le `winget.exe` du dossier `Microsoft.DesktopAppInstaller_*__8wekyb3d8bbwe` de version la plus élevée (sous `%ProgramFiles%\WindowsApps` ou via `Get-AppxPackage -AllUsers`), en ne retenant que les dossiers dont la version est analysable et qui contiennent `winget.exe`. L'alias d'exécution trouvé dans le `PATH` ne doit être utilisé qu'en dernier recours et jamais sous `SYSTEM` : c'est un point d'analyse propre à un utilisateur, que `SYSTEM` ne peut pas exécuter (« Le système ne peut pas accéder au fichier »).
 - Vérification : démonstration (exécution via la tâche sous `SYSTEM`).
 ```gherkin
 Étant donné la tâche planifiée exécutée sous SYSTEM
@@ -56,23 +106,23 @@ Alors winget est lancé et le journal ne contient pas "winget introuvable"
 ```
 
 ### REQ-MAINT-006 – winget introuvable
-Si aucun `winget.exe` n'est trouvé après la tentative d'installation de secours (REQ-MAINT-022), alors le script de maintenance doit journaliser `winget upgrade --all | ERREUR winget introuvable`.
+Si aucun `winget.exe` n'est trouvé après la tentative d'installation de secours (REQ-MAINT-022), alors le script de maintenance doit journaliser `winget upgrade | ERREUR winget introuvable`.
 - Vérification : test.
 ```gherkin
 Étant donné un poste sans App Installer et sans accès Internet
 Quand ISM est exécuté
 Alors la ligne "Installation winget" contient "ERREUR"
-Et la ligne "winget upgrade --all" contient "ERREUR winget introuvable"
+Et la ligne "winget upgrade" contient "ERREUR winget introuvable"
 Et le code de sortie vaut 1
 ```
 
-### REQ-MAINT-007 – Journal d'une ligne par commande
-Le script de maintenance doit écrire une seule ligne par commande, au format `dd/MM/yyyy HH:mm:ss | <commande sur 20 caractères> | <résultat>`.
+### REQ-MAINT-007 – Journal d'une ligne par commande ou par application
+Le script de maintenance doit écrire une seule ligne par commande, et pour winget une ligne par application traitée (REQ-MAINT-034), au format `dd/MM/yyyy HH:mm:ss | <commande sur 20 caractères> | <résultat>`.
 - Vérification : test.
 ```gherkin
-Étant donné une exécution de ISM sans DISM, winget et le runtime Visual C++ étant présents
+Étant donné une exécution de ISM sans DISM, winget et le runtime Visual C++ étant présents, avec 2 applications à mettre à jour
 Quand elle se termine
-Alors exactement deux lignes ont été ajoutées au journal
+Alors exactement trois lignes ont été ajoutées au journal : "sfc /scannow" puis deux lignes "winget upgrade"
 ```
 
 ### REQ-MAINT-008 – Résultat explicite
@@ -91,14 +141,25 @@ Si une commande ne peut pas être lancée, alors le script de maintenance doit j
 Étant donné sfc.exe inaccessible
 Quand ISM est exécuté
 Alors la ligne "sfc /scannow" contient "ERREUR lancement impossible"
-Et la ligne "winget upgrade --all" est quand même écrite
+Et au moins une ligne "winget upgrade" est quand même écrite
 ```
 
 ### REQ-MAINT-010 – Code de sortie
-Le script de maintenance doit se terminer avec le code `0` si toutes les commandes sont OK, sinon `1`.
+Le script de maintenance doit se terminer avec le code `1` si SFC ou DISM est en erreur, si winget est introuvable ou non exécutable (liste des mises à jour impossible à obtenir, REQ-MAINT-036), ou si **toutes** les applications à mettre à jour sont en erreur ; sinon avec `0`. Tant qu'au moins une application a été mise à jour (ou qu'il n'y a aucune mise à jour), l'échec d'autres applications ne doit pas modifier le code de sortie : l'objectif est un poste globalement maintenu, les applications en `ERREUR` dans le journal étant à mettre à jour manuellement.
 - Vérification : test.
 ```gherkin
-Étant donné une exécution où une commande est en ERREUR
+Étant donné une exécution où sfc réussit et où 1 application sur 4 échoue à se mettre à jour
+Quand ISM se termine
+Alors le journal contient une ligne "winget upgrade" en "ERREUR" pour cette application
+Et le code de sortie vaut 0
+Et le Planificateur de tâches affiche « L'opération a réussi. (0x0) »
+
+Étant donné une exécution où les 3 applications à mettre à jour échouent toutes
+Quand ISM se termine
+Alors le journal contient 3 lignes "winget upgrade" en "ERREUR"
+Et le code de sortie vaut 1
+
+Étant donné une exécution où la liste des mises à jour winget ne peut pas être obtenue
 Quand ISM se termine
 Alors le code de sortie vaut 1
 ```
@@ -146,6 +207,16 @@ Le script de désinstallation doit supprimer la tâche si elle existe et, où `-
 Étant donné une tâche installée
 Quand UMT est exécuté avec -RemoveFiles
 Alors la tâche et le dossier %ProgramData%\SystemMaintenance n'existent plus
+```
+
+### REQ-MAINT-038 – Compatibilité de la tâche selon le système
+Le script d'installation doit détecter la version du système d'exploitation (`Win32_OperatingSystem`) et régler la compatibilité de la tâche planifiée en conséquence : `Windows 10` (valeur 6) pour une version 10.0 ou supérieure (Windows 10 et 11), `Windows 8` (4) pour 6.2 et 6.3, `Windows 7` (3) pour 6.1, `Windows Vista` (2) sinon. Le choix et le système détecté doivent figurer sur la ligne `Installation tâche` du journal.
+- Vérification : démonstration.
+```gherkin
+Étant donné IMT exécuté en administrateur sur Windows 11
+Quand l'installation se termine
+Alors la tâche affiche « Configurer pour : Windows 10 » dans le Planificateur de tâches
+Et la ligne "Installation tâche" contient "OK compatibilité Windows 10"
 ```
 
 ## Exigences non fonctionnelles
@@ -210,12 +281,12 @@ Et la commande winget est disponible dans la console administrateur
 ```
 
 ### REQ-MAINT-022 – Réparation de secours pendant la maintenance
-Si `winget.exe` est introuvable, alors le script de maintenance doit tenter une seule fois l'installation de winget (REQ-MAINT-021) avant `winget upgrade --all`.
+Si `winget.exe` est introuvable, alors le script de maintenance doit tenter une seule fois l'installation de winget (REQ-MAINT-021) avant les mises à jour winget.
 - Vérification : test.
 ```gherkin
 Étant donné un poste où winget est introuvable
 Quand ISM est exécuté
-Alors une ligne "Installation winget" précède la ligne "winget upgrade --all"
+Alors une ligne "Installation winget" précède les lignes "winget upgrade"
 ```
 
 ### REQ-MAINT-023 – Journalisation de l'installation de winget
@@ -261,12 +332,12 @@ Alors le runtime est considéré présent et aucune ligne "Installation VC++" n'
 ```
 
 ### REQ-MAINT-027 – Installation du runtime pendant la maintenance
-Quand winget est localisé et que le runtime Visual C++ est absent, le script de maintenance doit installer le runtime (REQ-MAINT-028) avant `winget upgrade --all`.
+Quand winget est localisé et que le runtime Visual C++ est absent, le script de maintenance doit installer le runtime (REQ-MAINT-028) avant les mises à jour winget.
 - Vérification : test.
 ```gherkin
 Étant donné un poste avec winget mais sans runtime Visual C++
 Quand ISM est exécuté
-Alors une ligne "Installation VC++" précède la ligne "winget upgrade --all"
+Alors une ligne "Installation VC++" précède les lignes "winget upgrade"
 ```
 
 ### REQ-MAINT-028 – Installation silencieuse du runtime
@@ -325,8 +396,8 @@ Les blocs nommés de `IMT` correspondent à ses commentaires de section (`--- Do
 |---|---|---|
 | REQ-MAINT-001 | `ISM` : région Exécution (étape `sfc /scannow`), `Invoke-Step` | Implémentée |
 | REQ-MAINT-002 | `ISM` : région Exécution (bloc `if ($WithDism)`) | Implémentée |
-| REQ-MAINT-003 | `ISM` : région Exécution (étape `winget upgrade --all`) | Implémentée |
-| REQ-MAINT-004 | `ISM` : `$WingetSuccessCodes`, `Invoke-Step` | Implémentée |
+| REQ-MAINT-003 | `ISM` : `Invoke-WingetUpgrade`, `Invoke-WingetCapture`, `ConvertFrom-WingetTable` | Implémentée |
+| REQ-MAINT-004 | `ISM` : `Invoke-WingetUpgrade` (liste vide) | Implémentée |
 | REQ-MAINT-005 | `ISM` : `Get-WingetPath` | Implémentée |
 | REQ-MAINT-006 | `ISM` : région Exécution (branche `else` de `if ($wingetPath)`) | Implémentée |
 | REQ-MAINT-007 | `ISM` : `Write-Log` | Implémentée |
@@ -338,7 +409,7 @@ Les blocs nommés de `IMT` correspondent à ses commentaires de section (`--- Do
 | REQ-MAINT-013 | `IMT` : bloc Tâche planifiée (`New-ScheduledTaskSettingsSet`) | Implémentée |
 | REQ-MAINT-014 | `IMT` : bloc Tâche planifiée (`finally`) ; `UMT` : bloc `Supprimer la tâche planifiée` | Implémentée |
 | REQ-MAINT-015 | `UMT` : blocs `Supprimer la tâche planifiée` et `Supprimer le dossier et son contenu` | Implémentée |
-| REQ-MAINT-016 | `IMT` : bloc Tâche planifiée (`$arguments`, `New-ScheduledTaskPrincipal`) ; `ISM` : `Invoke-Step`, `Install-Winget` (`-Force`), `Invoke-VCRedistSetup`, étape `winget upgrade --all` | Implémentée |
+| REQ-MAINT-016 | `IMT` : bloc Tâche planifiée (`$arguments`, `New-ScheduledTaskPrincipal`) ; `ISM` : `Invoke-Step`, `Install-Winget` (`-Force`), `Invoke-VCRedistSetup`, `Invoke-WingetUpgrade` | Implémentée |
 | REQ-MAINT-017 | `IMT` : bloc Dossier protégé | Implémentée |
 | REQ-MAINT-018 | `ISM` : `Limit-LogSize` | Implémentée (`IMT`/`UMT` ajoutent une ligne sans réduire) |
 | REQ-MAINT-019 | `ISM` : `Write-Log` (bloc `catch`) | Implémentée |
@@ -355,3 +426,9 @@ Les blocs nommés de `IMT` correspondent à ses commentaires de section (`--- Do
 | REQ-MAINT-030 | `ISM` : bloc `if ($InstallWingetOnly)`, `Test-VCRedist`, `Invoke-VCRedistSetup` | Implémentée |
 | REQ-MAINT-031 | `ISM` : `Write-Log` | Implémentée |
 | REQ-MAINT-032 | `ISM` : `Install-Winget` (bloc `Add-AppxPackage`) | Implémentée |
+| REQ-MAINT-033 | `ISM` : `Invoke-WingetUpgrade` (boucle par application), `Invoke-Step` | Implémentée |
+| REQ-MAINT-034 | `ISM` : `Invoke-Step` (paramètre `-Detail`), `` | Implémentée |
+| REQ-MAINT-035 | `ISM` : `Invoke-WingetUpgrade` (boucle sans interruption) | Implémentée |
+| REQ-MAINT-036 | `ISM` : `Invoke-WingetUpgrade` (contrôle du code et `catch`), `ConvertFrom-WingetTable` (en-tête non reconnu) | Implémentée |
+| REQ-MAINT-037 | `ISM` : `Invoke-WingetUpgrade` (contrôle `…`) | Implémentée |
+| REQ-MAINT-038 | `IMT` : `Get-TaskCompatibility`, `Set-TaskCompatibility` | Implémentée |

@@ -16,9 +16,11 @@ Chaque exécution ajoute une ligne par commande. `OK` : rien à faire. `ERREUR` 
 |---|---|---|
 | `sfc /scannow \| ERREUR code N` | SFC a détecté un problème ou n'a pas pu terminer. | Lire `%WINDIR%\Logs\CBS\CBS.log`, puis réinstaller avec `-WithDism` pour réparer l'image avant SFC. |
 | `DISM /RestoreHealth \| ERREUR code N` | La réparation de l'image a échoué. | Lire `%WINDIR%\Logs\DISM\dism.log`. |
-| `winget upgrade --all \| ERREUR code N (0x8A15....)` | Au moins une mise à jour a échoué. | Rechercher le code hexadécimal dans la [liste des codes retour winget](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md). |
-| `winget upgrade --all \| ERREUR code -1073741515 (0xC0000135)` | DLL introuvable : runtime Visual C++ manquant (voir la ligne `Installation VC++` juste avant, si présente). | Relancer l'installeur en administrateur (voir ci-dessous). |
-| `winget upgrade --all \| ERREUR winget introuvable` | winget absent et la tentative de secours a échoué (voir la ligne `Installation winget` juste avant). | Réinstaller winget en administrateur (voir ci-dessous). |
+| `winget upgrade \| ERREUR <Id> <version> -> <version> : code N (0x...)` | La mise à jour de cette application a échoué ; les autres ont été traitées. Ex. `0x80190194` : fichier introuvable chez l'éditeur (404), se corrige quand le catalogue winget est mis à jour. Mise à jour bloquée (technologie d'installation différente) : désinstaller puis réinstaller l'application une fois. | Rechercher le code hexadécimal dans la [liste des codes retour winget](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md). |
+| `winget upgrade \| ERREUR ... : code -1073741515 (0xC0000135)` | DLL introuvable : runtime Visual C++ manquant (voir la ligne `Installation VC++` juste avant, si présente). | Relancer l'installeur en administrateur (voir ci-dessous). |
+| `winget upgrade \| ERREUR liste des mises à jour : ...` | winget n'a pas pu lister les mises à jour (source injoignable, sortie non reconnue). Aucune application n'a été mise à jour. | Lancer `winget upgrade` dans une console administrateur pour voir le message complet. |
+| `winget upgrade \| ERREUR <Id> : identifiant tronqué` | L'identifiant affiché par winget est coupé ; l'application est ignorée. | Mettre l'application à jour manuellement : `winget upgrade --id <Id complet> --exact`. |
+| `winget upgrade \| ERREUR winget introuvable` | winget absent et la tentative de secours a échoué (voir la ligne `Installation winget` juste avant). | Réinstaller winget en administrateur (voir ci-dessous). |
 | `Installation winget \| ERREUR <message>` | Pas d'accès Internet, PowerShell Gallery ou GitHub inaccessible (proxy, pare-feu), ou échec sous `SYSTEM` lors de la tentative de secours ([winget-cli #4271](https://github.com/microsoft/winget-cli/issues/4271)). | Vérifier l'accès Internet, puis réinstaller winget en administrateur (voir ci-dessous). |
 | `Installation winget \| ERREUR winget toujours introuvable après installation` | L'installation s'est terminée mais `winget.exe` n'est pas localisé. | Réinstaller winget en administrateur (voir ci-dessous), puis vérifier avec `winget --version`. |
 | `Installation VC++ \| ERREUR ...` | Runtime Visual C++ non installé : `aka.ms` inaccessible (message), ou code retour d'échec de `vc_redist`. | Vérifier l'accès à `aka.ms`, puis relancer l'installeur en administrateur (voir ci-dessous). |
@@ -53,8 +55,8 @@ Get-ScheduledTaskInfo -TaskName 'Maintenance hebdomadaire (SFC + winget)'
 
 | `LastTaskResult` | Signification |
 |---|---|
-| `0` | Toutes les commandes sont OK. |
-| `1` | Au moins une commande en erreur : voir le journal. |
+| `0` | Maintenance exécutée. Des applications peuvent malgré tout être en `ERREUR` dans le journal (au moins une autre a réussi) : à mettre à jour manuellement. |
+| `1` | SFC/DISM en erreur, winget introuvable ou non exécutable, ou toutes les applications à mettre à jour en erreur : voir le journal. |
 | Autre valeur | Le script n'a pas abouti (tâche arrêtée par la limite de 4 h, poste éteint pendant l'exécution…). Lancer le test manuel décrit dans le [README](../README.md#test-manuel). |
 
 Causes fréquentes d'absence d'exécution : poste sans réseau (condition de la tâche), poste éteint depuis l'échéance (la tâche rattrape au prochain démarrage).
