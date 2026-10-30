@@ -18,9 +18,10 @@ Spécifications : [docs/SPECIFICATIONS.md](docs/SPECIFICATIONS.md). Dépannage :
 
 ## Prérequis
 
-- Windows 10 ou 11, Windows PowerShell 5.1.
+- Windows 10 version 1809 (build 17763) ou ultérieure, ou Windows 11 ; Windows PowerShell 5.1. En dessous, winget n'est pas pris en charge : la ligne `Installation winget` passe en `ERREUR`.
 - Console PowerShell **lancée en administrateur** (installation, désinstallation, test manuel).
-- App Installer (winget) **version 1.4 ou supérieure** : l'option `--disable-interactivity` est toujours passée.
+- **Accès Internet** pendant l'installation (PowerShell Gallery, GitHub, `aka.ms`) : l'installeur provisionne winget et le runtime Visual C++.
+- winget n'a pas besoin d'être présent à l'avance, y compris sur un Windows 10 fraîchement installé. S'il l'est déjà, il est mis à jour (l'option `--disable-interactivity`, toujours passée, exige la version 1.4 ou supérieure).
 
 ## Installation
 
@@ -34,6 +35,7 @@ Le script :
 
 - crée `%ProgramData%\SystemMaintenance`, coupe l'héritage des permissions et n'y autorise que `SYSTEM` et `Administrateurs` (contrôle total), `Utilisateurs` (lecture/exécution) ;
 - y copie `Invoke-SystemMaintenance.ps1` et retire la marque « téléchargé depuis Internet » ;
+- installe ou met à jour winget pour tous les utilisateurs en lançant `Invoke-SystemMaintenance.ps1 -InstallWingetOnly` dans la session administrateur (méthode recommandée par Microsoft) : ligne `Installation winget` dans le journal. Installe aussi le runtime Visual C++ s'il est absent (ligne `Installation VC++`). En cas d'échec, un simple avertissement s'affiche et l'installation continue ; la maintenance retentera ;
 - crée ou remplace la tâche `\Maintenance hebdomadaire (SFC + winget)` : hebdomadaire, compte `SYSTEM`, privilèges les plus élevés, rattrapage si le poste était éteint, uniquement si le réseau est disponible, une seule instance, durée maximale 4 h, 2 relances espacées de 30 min en cas d'échec ;
 - écrit la ligne `Installation tâche` dans le journal.
 
@@ -65,8 +67,15 @@ Accepte aussi `-WhatIf` et `-Confirm`.
 | `-WithDism` | absent | Exécute DISM `/RestoreHealth` avant SFC. |
 | `-LogPath` | `%ProgramData%\SystemMaintenance\Maintenance.log` | Fichier journal. |
 | `-MaxLogLines` | `500` | Lignes conservées (10 à 100 000), les plus anciennes sont supprimées. |
+| `-InstallWingetOnly` | absent | Installe ou répare uniquement winget et le runtime Visual C++, sans lancer la maintenance. |
 
-Code de sortie : `0` si toutes les commandes sont OK, `1` si au moins une est en erreur.
+Code de sortie : `0` si toutes les commandes sont OK, `1` si au moins une est en erreur. Avec `-InstallWingetOnly` : `0` si winget est localisé et le runtime Visual C++ présent, sinon `1`.
+
+`-InstallWingetOnly` effectue, sans invite : activation de TLS 1.2, installation du fournisseur NuGet (2.8.5.201 minimum) si absent, installation du module `Microsoft.WinGet.Client` (portée `AllUsers`, depuis `PSGallery`), puis `Repair-WinGetPackageManager -AllUsers -Latest -Force`. Hors compte `SYSTEM`, si winget n'est pas encore dans le `PATH`, la version la plus récente d'App Installer installée sur la machine est enregistrée pour l'utilisateur courant (`Add-AppxPackage -Register <InstallLocation>\AppxManifest.xml -DisableDevelopmentMode`, erreurs ignorées). Sans cela, l'utilisateur garde l'App Installer d'origine (sans winget) jusqu'à sa prochaine connexion.
+
+Il installe ensuite, si absent, le Visual C++ Redistributable 2015-2022 dont winget a besoin sous `SYSTEM` : téléchargement de `https://aka.ms/vs/17/release/vc_redist.<x64|x86>.exe` dans le dossier du journal, installation `/install /quiet /norestart`, suppression de l'installeur.
+
+Pendant la maintenance, si winget est introuvable, son installation est tentée une fois avant `winget upgrade --all` ; si le runtime Visual C++ est absent, son installation l'est aussi.
 
 ### `Uninstall-MaintenanceTask.ps1`
 
@@ -82,12 +91,14 @@ Accepte aussi `-WhatIf` et `-Confirm`.
 
 Emplacement : `%ProgramData%\SystemMaintenance\Maintenance.log` (un seul fichier, UTF-8).
 
-Format : `date heure | commande | résultat`, une ligne par commande. Le résultat vaut `OK` ou `ERREUR` suivi du code retour en décimal et en hexadécimal.
+Format : `date heure | commande | résultat`, une ligne par commande. Le résultat vaut `OK` ou `ERREUR` suivi du code retour en décimal et en hexadécimal (ou d'un message, par exemple pour `Installation winget`).
 
 ```text
-2026-11-04 12:00:01 | Installation tâche   | OK
-2026-11-04 12:00:02 | sfc /scannow         | OK
-2026-11-04 12:38:47 | winget upgrade --all | ERREUR code -1978335226 (0x8A150006)
+04/11/2026 11:58:40 | Installation winget  | OK
+04/11/2026 11:59:12 | Installation VC++    | OK
+04/11/2026 12:00:01 | Installation tâche   | OK
+04/11/2026 12:00:02 | sfc /scannow         | OK
+04/11/2026 12:38:47 | winget upgrade --all | ERREUR code -1978335226 (0x8A150006)
 ```
 
 Le fichier est réduit aux `500` dernières lignes à la fin de chaque exécution : pas d'accumulation. Lecture des erreurs : [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
@@ -135,5 +146,7 @@ Supprimer la tâche, le script et le journal :
   winget pin add --id <id>
   ```
 
+- **Installation de winget sous `SYSTEM`** (secours pendant la maintenance) : comportement non garanti par Microsoft ([winget-cli #4271](https://github.com/microsoft/winget-cli/issues/4271)). En cas d'échec, relancer l'installation en administrateur (voir [dépannage](docs/TROUBLESHOOTING.md)).
+- La désinstallation conserve winget, le module `Microsoft.WinGet.Client` et le runtime Visual C++ : ce sont des composants Windows utiles en dehors de cet outil.
 - La tâche ne démarre que si le réseau est disponible et s'arrête au bout de 4 h.
 - Les journaux d'installation et de désinstallation ajoutent une ligne sans réduire le fichier ; la réduction a lieu à l'exécution suivante de la maintenance.

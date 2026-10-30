@@ -47,7 +47,7 @@ Alors la ligne "winget upgrade --all" se termine par "OK"
 ```
 
 ### REQ-MAINT-005 – Localisation de winget sous SYSTEM
-Quand `winget.exe` est absent du `PATH`, le script de maintenance doit utiliser le `winget.exe` du paquet `Microsoft.DesktopAppInstaller` de version la plus élevée sous `%ProgramFiles%\WindowsApps`.
+Quand `winget.exe` est absent du `PATH`, le script de maintenance doit utiliser le `winget.exe` du dossier `Microsoft.DesktopAppInstaller_*__8wekyb3d8bbwe` de version la plus élevée sous `%ProgramFiles%\WindowsApps`, en ne retenant que les dossiers dont la version est analysable et qui contiennent `winget.exe`.
 - Vérification : démonstration (exécution via la tâche sous `SYSTEM`).
 ```gherkin
 Étant donné la tâche planifiée exécutée sous SYSTEM
@@ -56,20 +56,21 @@ Alors winget est lancé et le journal ne contient pas "winget introuvable"
 ```
 
 ### REQ-MAINT-006 – winget introuvable
-Si aucun `winget.exe` n'est trouvé, alors le script de maintenance doit journaliser `ERREUR winget introuvable (installer / mettre à jour App Installer)`.
+Si aucun `winget.exe` n'est trouvé après la tentative d'installation de secours (REQ-MAINT-022), alors le script de maintenance doit journaliser `winget upgrade --all | ERREUR winget introuvable`.
 - Vérification : test.
 ```gherkin
-Étant donné un poste sans App Installer
+Étant donné un poste sans App Installer et sans accès Internet
 Quand ISM est exécuté
-Alors la ligne "winget upgrade --all" contient "ERREUR winget introuvable"
+Alors la ligne "Installation winget" contient "ERREUR"
+Et la ligne "winget upgrade --all" contient "ERREUR winget introuvable"
 Et le code de sortie vaut 1
 ```
 
 ### REQ-MAINT-007 – Journal d'une ligne par commande
-Le script de maintenance doit écrire une seule ligne par commande, au format `yyyy-MM-dd HH:mm:ss | <commande sur 20 caractères> | <résultat>`.
+Le script de maintenance doit écrire une seule ligne par commande, au format `dd/MM/yyyy HH:mm:ss | <commande sur 20 caractères> | <résultat>`.
 - Vérification : test.
 ```gherkin
-Étant donné une exécution de ISM sans DISM
+Étant donné une exécution de ISM sans DISM, winget et le runtime Visual C++ étant présents
 Quand elle se termine
 Alors exactement deux lignes ont été ajoutées au journal
 ```
@@ -150,7 +151,7 @@ Alors la tâche et le dossier %ProgramData%\SystemMaintenance n'existent plus
 ## Exigences non fonctionnelles
 
 ### REQ-MAINT-016 – Exécution silencieuse
-Le système doit s'exécuter sans fenêtre, pop-up ni demande de validation pour l'utilisateur du poste : tâche sous `SYSTEM` (`S-1-5-18`), PowerShell `-NonInteractive -WindowStyle Hidden`, commandes lancées en fenêtre masquée, winget `--silent --disable-interactivity`.
+Le système doit s'exécuter sans fenêtre, pop-up ni demande de validation pour l'utilisateur du poste : tâche sous `SYSTEM` (`S-1-5-18`), PowerShell `-NonInteractive -WindowStyle Hidden`, commandes lancées en fenêtre masquée, winget `--silent --disable-interactivity`, runtime Visual C++ `/quiet /norestart`.
 - Vérification : démonstration (session utilisateur ouverte pendant l'exécution de la tâche).
 ```gherkin
 Étant donné un utilisateur connecté au poste
@@ -194,27 +195,163 @@ Quand IMT puis la tâche sont exécutés
 Alors l'installation réussit et le journal contient "sfc /scannow"
 ```
 
+## Exigences fonctionnelles – provisionnement de winget
+
+Un Windows 10 fraîchement installé n'a pas winget tant que le Microsoft Store n'a pas mis à jour App Installer.
+
+### REQ-MAINT-021 – Provisionnement de winget à l'installation
+Après la copie de ISM, le script d'installation doit lancer `ISM -InstallWingetOnly` dans la session administrateur, ce qui installe ou répare winget pour tous les utilisateurs sans invite : TLS 1.2, fournisseur NuGet 2.8.5.201 minimum, module `Microsoft.WinGet.Client` (portée `AllUsers`, depuis `PSGallery`), `Repair-WinGetPackageManager -AllUsers -Latest -Force`, puis l'enregistrement pour la session (REQ-MAINT-032) et le runtime Visual C++ (REQ-MAINT-030).
+- Vérification : démonstration (Windows 10 fraîchement installé, accès Internet).
+```gherkin
+Étant donné un Windows 10 fraîchement installé sans winget, avec accès Internet
+Quand IMT est exécuté en administrateur
+Alors le journal contient "Installation winget" avec "OK"
+Et la commande winget est disponible dans la console administrateur
+```
+
+### REQ-MAINT-022 – Réparation de secours pendant la maintenance
+Si `winget.exe` est introuvable, alors le script de maintenance doit tenter une seule fois l'installation de winget (REQ-MAINT-021) avant `winget upgrade --all`.
+- Vérification : test.
+```gherkin
+Étant donné un poste où winget est introuvable
+Quand ISM est exécuté
+Alors une ligne "Installation winget" précède la ligne "winget upgrade --all"
+```
+
+### REQ-MAINT-023 – Journalisation de l'installation de winget
+Quand l'installation de winget est tentée, le script de maintenance doit journaliser `Installation winget` avec `OK` si winget est ensuite localisé, `ERREUR winget toujours introuvable après installation` s'il ne l'est pas, ou `ERREUR <message>` si l'installation échoue.
+- Vérification : test.
+```gherkin
+Étant donné un poste sans accès à la PowerShell Gallery
+Quand ISM est exécuté avec -InstallWingetOnly
+Alors la ligne "Installation winget" contient "ERREUR"
+Et le code de sortie vaut 1
+```
+
+### REQ-MAINT-024 – Conservation de winget à la désinstallation
+Le script de désinstallation ne doit supprimer ni winget, ni le module `Microsoft.WinGet.Client`, ni le runtime Visual C++.
+- Vérification : inspection.
+```gherkin
+Étant donné un poste où IMT a installé winget et le runtime Visual C++
+Quand UMT est exécuté avec -RemoveFiles
+Alors winget, le module Microsoft.WinGet.Client et le runtime Visual C++ sont toujours présents
+```
+
+### REQ-MAINT-025 – Échec de l'installation de winget non bloquant
+Si `ISM -InstallWingetOnly` se termine avec un code différent de `0`, alors le script d'installation doit émettre un avertissement et poursuivre la création de la tâche.
+- Vérification : test.
+```gherkin
+Étant donné un poste sans accès Internet
+Quand IMT est exécuté en administrateur
+Alors un avertissement "winget n'a pas pu être installé" s'affiche
+Et la tâche planifiée est créée
+```
+
+## Exigences fonctionnelles – runtime Visual C++ et journal
+
+Sur un Windows 10 neuf, `winget.exe` lancé sous `SYSTEM` échoue avec `0xC0000135` (DLL introuvable) tant que le Visual C++ Redistributable 2015-2022 n'est pas installé.
+
+### REQ-MAINT-026 – Détection du runtime Visual C++
+Le script de maintenance doit considérer le runtime Visual C++ présent si et seulement si la valeur `Installed` de `HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\<arch>` vaut `1` (`<arch>` = `x64` sur un OS 64 bits, sinon `x86`).
+- Vérification : inspection.
+```gherkin
+Étant donné un Windows 64 bits où la valeur Installed de la clé x64 vaut 1
+Quand ISM teste le runtime
+Alors le runtime est considéré présent et aucune ligne "Installation VC++" n'est écrite
+```
+
+### REQ-MAINT-027 – Installation du runtime pendant la maintenance
+Quand winget est localisé et que le runtime Visual C++ est absent, le script de maintenance doit installer le runtime (REQ-MAINT-028) avant `winget upgrade --all`.
+- Vérification : test.
+```gherkin
+Étant donné un poste avec winget mais sans runtime Visual C++
+Quand ISM est exécuté
+Alors une ligne "Installation VC++" précède la ligne "winget upgrade --all"
+```
+
+### REQ-MAINT-028 – Installation silencieuse du runtime
+Quand l'installation du runtime est tentée, le script de maintenance doit télécharger `https://aka.ms/vs/17/release/vc_redist.<arch>.exe` dans le dossier du journal (dossier protégé, pas `%TEMP%`), l'exécuter avec `/install /quiet /norestart`, considérer `0`, `3010` et `1638` comme des succès, puis supprimer l'installeur.
+- Vérification : test.
+```gherkin
+Étant donné un poste sans runtime Visual C++, avec accès à aka.ms
+Quand l'installation du runtime est tentée
+Alors la ligne "Installation VC++" contient "OK"
+Et vc_redist.<arch>.exe n'est plus présent dans le dossier du journal
+```
+
+### REQ-MAINT-029 – Journalisation de l'installation du runtime
+Quand l'installation du runtime est tentée, le script de maintenance doit journaliser `Installation VC++` avec `OK`, `ERREUR code <décimal> (0x<hexadécimal>)`, `ERREUR lancement impossible : <message>`, ou `ERREUR <message>` si le téléchargement échoue.
+- Vérification : test.
+```gherkin
+Étant donné un poste sans runtime Visual C++ et sans accès à aka.ms
+Quand ISM est exécuté avec -InstallWingetOnly
+Alors la ligne "Installation VC++" contient "ERREUR"
+```
+
+### REQ-MAINT-030 – Runtime avec -InstallWingetOnly
+Où `-InstallWingetOnly` est présent, le script de maintenance doit, après l'installation de winget et quel qu'en soit le résultat, installer le runtime Visual C++ s'il est absent, puis se terminer avec `0` seulement si winget est localisé et le runtime présent ou installé avec succès, sinon `1`.
+- Vérification : test.
+```gherkin
+Étant donné un poste où winget s'installe mais pas le runtime Visual C++
+Quand ISM est exécuté avec -InstallWingetOnly
+Alors la ligne "Installation winget" contient "OK"
+Et la ligne "Installation VC++" contient "ERREUR"
+Et le code de sortie vaut 1
+```
+
+### REQ-MAINT-031 – Message multi-lignes aplati
+Si un résultat à journaliser contient des retours à la ligne, alors le script de maintenance doit les remplacer, avec les espaces qui les entourent, par un seul espace.
+- Vérification : test.
+```gherkin
+Étant donné une exception dont le message tient sur plusieurs lignes
+Quand elle est journalisée
+Alors le journal ne reçoit qu'une seule ligne
+```
+
+### REQ-MAINT-032 – Enregistrement de winget pour la session
+Quand le compte courant n'est pas `SYSTEM` et que `winget.exe` est absent du `PATH` après `Repair-WinGetPackageManager`, le script de maintenance doit enregistrer pour l'utilisateur courant la version la plus récente de `Microsoft.DesktopAppInstaller` installée sur la machine (`Add-AppxPackage -Register <InstallLocation>\AppxManifest.xml -DisableDevelopmentMode`) et ignorer son échec.
+- Vérification : test.
+```gherkin
+Étant donné une console administrateur où winget est déjà dans le PATH
+Quand ISM est exécuté avec -InstallWingetOnly
+Alors la ligne "Installation winget" contient "OK" et ne contient pas "0x80073D06"
+```
+
 ## Matrice de traçabilité
+
+Les blocs nommés de `IMT` correspondent à ses commentaires de section (`--- Dossier protégé ---`, `--- winget ---`, `--- Tâche planifiée ---`).
 
 | Exigence | Implémentation | Statut |
 |---|---|---|
-| REQ-MAINT-001 | `ISM` : bloc Exécution (l. 170), `Invoke-Step` | Implémentée |
-| REQ-MAINT-002 | `ISM` : bloc Exécution (l. 165-168) | Implémentée |
-| REQ-MAINT-003 | `ISM` : bloc Exécution (l. 174-176) | Implémentée |
-| REQ-MAINT-004 | `ISM` : `$WingetSuccessCodes` (l. 50), `Invoke-Step` | Implémentée |
+| REQ-MAINT-001 | `ISM` : région Exécution (étape `sfc /scannow`), `Invoke-Step` | Implémentée |
+| REQ-MAINT-002 | `ISM` : région Exécution (bloc `if ($WithDism)`) | Implémentée |
+| REQ-MAINT-003 | `ISM` : région Exécution (étape `winget upgrade --all`) | Implémentée |
+| REQ-MAINT-004 | `ISM` : `$WingetSuccessCodes`, `Invoke-Step` | Implémentée |
 | REQ-MAINT-005 | `ISM` : `Get-WingetPath` | Implémentée |
-| REQ-MAINT-006 | `ISM` : bloc Exécution (l. 178-181) | Implémentée |
+| REQ-MAINT-006 | `ISM` : région Exécution (branche `else` de `if ($wingetPath)`) | Implémentée |
 | REQ-MAINT-007 | `ISM` : `Write-Log` | Implémentée |
 | REQ-MAINT-008 | `ISM` : `Invoke-Step`, `Format-Error` | Implémentée |
 | REQ-MAINT-009 | `ISM` : `Invoke-Step` (bloc `catch`) | Implémentée |
-| REQ-MAINT-010 | `ISM` : l. 185 | Implémentée |
-| REQ-MAINT-011 | `IMT` : l. 92-95 | Implémentée |
-| REQ-MAINT-012 | `IMT` : l. 104-105, 123-125 | Implémentée |
-| REQ-MAINT-013 | `IMT` : l. 108-116 | Implémentée |
-| REQ-MAINT-014 | `IMT` : l. 132-135 ; `UMT` : l. 40-43 | Implémentée |
-| REQ-MAINT-015 | `UMT` : l. 33-55 | Implémentée |
-| REQ-MAINT-016 | `IMT` : l. 99, 107 ; `ISM` : `Invoke-Step`, l. 175 | Implémentée |
-| REQ-MAINT-017 | `IMT` : l. 70-90 | Implémentée |
+| REQ-MAINT-010 | `ISM` : région Exécution (`exit [int](-not $allOk)`) | Implémentée |
+| REQ-MAINT-011 | `IMT` : bloc `Copier le script de maintenance` | Implémentée |
+| REQ-MAINT-012 | `IMT` : bloc Tâche planifiée (`New-ScheduledTaskTrigger`, `Register-ScheduledTask`) | Implémentée |
+| REQ-MAINT-013 | `IMT` : bloc Tâche planifiée (`New-ScheduledTaskSettingsSet`) | Implémentée |
+| REQ-MAINT-014 | `IMT` : bloc Tâche planifiée (`finally`) ; `UMT` : bloc `Supprimer la tâche planifiée` | Implémentée |
+| REQ-MAINT-015 | `UMT` : blocs `Supprimer la tâche planifiée` et `Supprimer le dossier et son contenu` | Implémentée |
+| REQ-MAINT-016 | `IMT` : bloc Tâche planifiée (`$arguments`, `New-ScheduledTaskPrincipal`) ; `ISM` : `Invoke-Step`, `Install-Winget` (`-Force`), `Invoke-VCRedistSetup`, étape `winget upgrade --all` | Implémentée |
+| REQ-MAINT-017 | `IMT` : bloc Dossier protégé | Implémentée |
 | REQ-MAINT-018 | `ISM` : `Limit-LogSize` | Implémentée (`IMT`/`UMT` ajoutent une ligne sans réduire) |
 | REQ-MAINT-019 | `ISM` : `Write-Log` (bloc `catch`) | Implémentée |
-| REQ-MAINT-020 | `ISM` : `Get-NativeSystemDirectory` ; `IMT` : l. 70-72 | Implémentée |
+| REQ-MAINT-020 | `ISM` : `Get-NativeSystemDirectory` ; `IMT` : bloc Dossier protégé (SID) | Implémentée |
+| REQ-MAINT-021 | `IMT` : bloc winget ; `ISM` : bloc `if ($InstallWingetOnly)`, `Invoke-WingetSetup`, `Install-Winget` | Implémentée (sous `SYSTEM`, non garanti : winget-cli #4271) |
+| REQ-MAINT-022 | `ISM` : région Exécution (bloc `if (-not $wingetPath)`), `Invoke-WingetSetup` | Implémentée |
+| REQ-MAINT-023 | `ISM` : `Invoke-WingetSetup` | Implémentée |
+| REQ-MAINT-024 | `UMT` : absence de suppression (cf. `.DESCRIPTION`) | Implémentée |
+| REQ-MAINT-025 | `IMT` : bloc winget (test de `$LASTEXITCODE`, `Write-Warning`) | Implémentée |
+| REQ-MAINT-026 | `ISM` : `Test-VCRedist` | Implémentée |
+| REQ-MAINT-027 | `ISM` : région Exécution (bloc `if ($wingetPath -and -not (Test-VCRedist))`), `Invoke-VCRedistSetup` | Implémentée |
+| REQ-MAINT-028 | `ISM` : `Invoke-VCRedistSetup`, `Invoke-Step` | Implémentée |
+| REQ-MAINT-029 | `ISM` : `Invoke-VCRedistSetup` (bloc `catch`), `Invoke-Step`, `Format-Error` | Implémentée |
+| REQ-MAINT-030 | `ISM` : bloc `if ($InstallWingetOnly)`, `Test-VCRedist`, `Invoke-VCRedistSetup` | Implémentée |
+| REQ-MAINT-031 | `ISM` : `Write-Log` | Implémentée |
+| REQ-MAINT-032 | `ISM` : `Install-Winget` (bloc `Add-AppxPackage`) | Implémentée |
