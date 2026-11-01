@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="627" viewBox="0 0 1200 627" role="img" aria-labelledby="t d">
+  <title id="t">Développer un outil avec des agents IA cadrés, piloté par un humain</title>
+  <desc id="d">L'humain décide et teste ; l'agent principal code et orchestre quatre sous-agents spécialisés (documentation, Microsoft, git, LinkedIn) ; le livrable est l'outil de maintenance Windows avec sa spécification.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5B6B7F"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="627" fill="#F5F7FA"/>
+  <g font-family="Segoe UI, Arial, Helvetica, sans-serif" text-anchor="middle">
+    <!-- Humain -->
+    <rect x="330" y="24" width="540" height="104" rx="14" fill="#1F3A5F"/>
+    <text x="600" y="68" font-size="32" font-weight="700" fill="#FFFFFF">Humain</text>
+    <text x="600" y="106" font-size="24" fill="#DCE6F2">décide · teste · valide</text>
+
+    <!-- Fleches humain -->
+    <line x1="470" y1="128" x2="330" y2="196" stroke="#5B6B7F" stroke-width="3" marker-end="url(#a)"/>
+    <line x1="730" y1="128" x2="870" y2="196" stroke="#5B6B7F" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#a)"/>
+    <text x="900" y="166" font-size="22" fill="#5B6B7F" text-anchor="start">tests terrain</text>
+
+    <!-- Agent principal -->
+    <rect x="110" y="200" width="440" height="104" rx="14" fill="#FFFFFF" stroke="#2E6DB4" stroke-width="3"/>
+    <text x="330" y="244" font-size="30" font-weight="700" fill="#1F3A5F">Agent principal</text>
+    <text x="330" y="282" font-size="22" fill="#33475B">code · orchestre</text>
+
+    <!-- Livrable -->
+    <rect x="650" y="200" width="440" height="104" rx="14" fill="#E8F3EC" stroke="#2E7D5B" stroke-width="3"/>
+    <text x="870" y="244" font-size="30" font-weight="700" fill="#1F4D38">Livrable</text>
+    <text x="870" y="282" font-size="22" fill="#1F4D38">outil + 38 exigences EARS</text>
+    <line x1="550" y1="252" x2="646" y2="252" stroke="#5B6B7F" stroke-width="3" marker-end="url(#a)"/>
+
+    <!-- Fleches vers sous-agents -->
+    <line x1="230" y1="304" x2="172" y2="380" stroke="#5B6B7F" stroke-width="3" marker-end="url(#a)"/>
+    <line x1="300" y1="304" x2="458" y2="380" stroke="#5B6B7F" stroke-width="3" marker-end="url(#a)"/>
+    <line x1="370" y1="304" x2="742" y2="380" stroke="#5B6B7F" stroke-width="3" marker-end="url(#a)"/>
+    <line x1="440" y1="304" x2="1028" y2="380" stroke="#5B6B7F" stroke-width="3" marker-end="url(#a)"/>
+
+    <!-- Sous-agents -->
+    <rect x="40" y="384" width="265" height="120" rx="14" fill="#FFFFFF" stroke="#7A8CA3" stroke-width="2"/>
+    <text x="172" y="432" font-size="28" font-weight="700" fill="#1F3A5F">Docs &amp; spécs</text>
+    <text x="172" y="474" font-size="22" fill="#33475B">jamais le code</text>
+
+    <rect x="325" y="384" width="265" height="120" rx="14" fill="#FFFFFF" stroke="#7A8CA3" stroke-width="2"/>
+    <text x="457" y="432" font-size="28" font-weight="700" fill="#1F3A5F">Microsoft</text>
+    <text x="457" y="474" font-size="22" fill="#33475B">sources Learn citées</text>
+
+    <rect x="610" y="384" width="265" height="120" rx="14" fill="#FFFFFF" stroke="#7A8CA3" stroke-width="2"/>
+    <text x="742" y="432" font-size="28" font-weight="700" fill="#1F3A5F">Git</text>
+    <text x="742" y="474" font-size="22" fill="#33475B">ne pousse jamais</text>
+
+    <rect x="895" y="384" width="265" height="120" rx="14" fill="#FFFFFF" stroke="#7A8CA3" stroke-width="2"/>
+    <text x="1027" y="432" font-size="28" font-weight="700" fill="#1F3A5F">LinkedIn</text>
+    <text x="1027" y="474" font-size="22" fill="#33475B">ne publie jamais</text>
+
+    <!-- Boucle -->
+    <text x="600" y="572" font-size="24" font-weight="600" fill="#1F3A5F">Boucle : test terrain → diagnostic → spec → code</text>
+    <text x="600" y="606" font-size="22" fill="#5B6B7F">Chaque agent : un rôle, des outils limités, des garde-fous écrits</text>
+  </g>
+</svg>

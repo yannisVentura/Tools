@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="627" viewBox="0 0 1200 627" role="img" aria-labelledby="t d">
+  <title id="t">Maintenance Windows silencieuse : SFC + winget</title>
+  <desc id="d">Tâche planifiée hebdomadaire sous SYSTEM, puis SFC (DISM en option), puis winget application par application, puis un journal d'une ligne par application. Extrait de journal : une application OK, une en ERREUR, tâche en succès.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5B6B7F"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="627" fill="#F5F7FA"/>
+
+  <text x="40" y="70" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#1F2A37">Maintenance Windows silencieuse</text>
+  <text x="40" y="115" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="28" fill="#5B6B7F">PowerShell · aucune fenêtre pour l'utilisateur</text>
+
+  <g font-family="Segoe UI, Arial, Helvetica, sans-serif" text-anchor="middle">
+    <rect x="30" y="160" width="255" height="150" rx="14" fill="#FFFFFF" stroke="#1F4E79" stroke-width="3"/>
+    <text x="157" y="225" font-size="30" font-weight="700" fill="#1F4E79">Tâche SYSTEM</text>
+    <text x="157" y="267" font-size="28" fill="#1F2A37">chaque semaine</text>
+
+    <rect x="325" y="160" width="255" height="150" rx="14" fill="#FFFFFF" stroke="#1F4E79" stroke-width="3"/>
+    <text x="452" y="225" font-size="30" font-weight="700" fill="#1F4E79">SFC</text>
+    <text x="452" y="267" font-size="28" fill="#1F2A37">(+ DISM)</text>
+
+    <rect x="620" y="160" width="255" height="150" rx="14" fill="#FFFFFF" stroke="#1F4E79" stroke-width="3"/>
+    <text x="747" y="225" font-size="30" font-weight="700" fill="#1F4E79">winget</text>
+    <text x="747" y="267" font-size="28" fill="#1F2A37">app par app</text>
+
+    <rect x="915" y="160" width="255" height="150" rx="14" fill="#1F4E79"/>
+    <text x="1042" y="225" font-size="30" font-weight="700" fill="#FFFFFF">Journal</text>
+    <text x="1042" y="267" font-size="28" fill="#FFFFFF">1 ligne / app</text>
+  </g>
+
+  <g stroke="#5B6B7F" stroke-width="4" marker-end="url(#arrow)">
+    <line x1="288" y1="235" x2="320" y2="235"/>
+    <line x1="583" y1="235" x2="615" y2="235"/>
+    <line x1="878" y1="235" x2="910" y2="235"/>
+  </g>
+
+  <rect x="30" y="350" width="1140" height="190" rx="14" fill="#1F2A37"/>
+  <g font-family="Consolas, 'Courier New', monospace" font-size="28">
+    <text x="60" y="405"><tspan fill="#7BC88F" font-weight="700">OK</tspan><tspan x="200" fill="#E5E9F0">Audacity 3.7.9 -&gt; 4.0.1</tspan></text>
+    <text x="60" y="455"><tspan fill="#F08C7A" font-weight="700">ERREUR</tspan><tspan x="200" fill="#E5E9F0">EpsonNetPrint : 0x80190194</tspan></text>
+    <text x="60" y="505"><tspan fill="#9FB3C8">Tâche : succès (0x0)</tspan></text>
+  </g>
+
+  <text x="40" y="595" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="30" font-weight="600" fill="#1F2A37">Un échec isolé n'arrête pas les autres mises à jour</text>
+</svg>
