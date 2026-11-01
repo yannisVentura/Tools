@@ -17,6 +17,10 @@ To activate Powershell Script on you computer open Powershell as an administrato
 Silent weekly maintenance for Windows 10/11: `sfc /scannow` then `winget upgrade --all`, run by a scheduled task under SYSTEM, with a capped one-line-per-command log.
 See [Windows/Maintenance/README.md](Windows/Maintenance/README.md).
 
+### Obsolete
+
+Older Windows scripts (2017: Windows 7 product key, SFC shortcuts, Python/Django setup, Zip utilities) are legacy code kept for history in [Windows/Obsolete](Windows/Obsolete/README.md), with their modern replacements.
+
 ## Linux
 
 ### Debian scripts
